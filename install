@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Pardus Assistant one-line installer.
+#
+#   curl -fsSL https://raw.githubusercontent.com/ENux-Distro/pardus-ai-assistant/main/install | bash
+#
+# Clones the repository and runs `make install`, keeping the noisy output in a
+# log and showing only friendly progress. Override with env vars:
+#   PARDUS_REPO   git URL        (default: the ENux-Distro repo)
+#   PARDUS_BRANCH branch         (default: main)
+#   PARDUS_SRC    clone location (default: ~/.local/share/pardus-ai-assistant)
+set -euo pipefail
+
+REPO="${PARDUS_REPO:-https://github.com/ENux-Distro/pardus-ai-assistant.git}"
+BRANCH="${PARDUS_BRANCH:-main}"
+SRC="${PARDUS_SRC:-$HOME/.local/share/pardus-ai-assistant}"
+LOG="$(mktemp /tmp/pardus-install.XXXXXX.log)"
+
+# --- pretty output ----------------------------------------------------------
+if [ -t 1 ]; then YEL=$'\033[1;33m'; DIM=$'\033[2m'; RED=$'\033[1;31m'; OFF=$'\033[0m'; else YEL=""; DIM=""; RED=""; OFF=""; fi
+say()  { printf "%s==>%s %s\n" "$YEL" "$OFF" "$1"; }
+fail() { printf "%sError:%s %s\n" "$RED" "$OFF" "$1" >&2; printf "%sSee %s for details.%s\n" "$DIM" "$LOG" "$OFF" >&2; exit 1; }
+# Run a command quietly; dump the log only if it fails.
+run()  { if ! "$@" >>"$LOG" 2>&1; then fail "step failed: $*"; fi; }
+
+# Make sure ~/.local/bin and ~/.bun/bin are on PATH — both for this session and
+# permanently, by adding a small (idempotent) block to the shell startup files.
+MARKER="# Added by Pardus Assistant installer"
+ensure_path() {
+  export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+  local block f wrote=0
+  block=$(printf '\n%s\nfor d in "$HOME/.local/bin" "$HOME/.bun/bin"; do\n  case ":$PATH:" in *":$d:"*) ;; *) PATH="$d:$PATH" ;; esac\ndone\nexport PATH\n' "$MARKER")
+  for f in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
+    [ -e "$f" ] || { [ "$f" = "$HOME/.zshrc" ] && continue; : >"$f"; }
+    grep -qF "$MARKER" "$f" 2>/dev/null && { wrote=1; continue; }
+    printf '%s\n' "$block" >>"$f" && wrote=1
+  done
+  return 0
+}
+
+[ "$(id -u)" != "0" ] || fail "Don't run this as root/sudo — it installs into your home directory."
+
+printf "%sPardus Assistant installer%s\n" "$YEL" "$OFF"
+
+# --- prerequisites ----------------------------------------------------------
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# git
+if ! have git; then
+  say "Installing git…"
+  if have apt-get; then run sudo apt-get update -qq; run sudo apt-get install -y -qq git
+  else fail "git is required but not installed."; fi
+fi
+
+# WebKit window dependencies (for the native app window). Best-effort on apt.
+if have apt-get; then
+  if ! python3 -c "import gi; gi.require_version('WebKit2','4.1')" >/dev/null 2>&1; then
+    say "Installing app-window dependencies…"
+    run sudo apt-get update -qq
+    run sudo apt-get install -y -qq python3-gi gir1.2-webkit2-4.1 || true
+  fi
+fi
+
+# bun (installs into ~/.bun, no sudo)
+if ! have bun && [ ! -x "$HOME/.bun/bin/bun" ]; then
+  say "Installing bun…"
+  run bash -c "curl -fsSL https://bun.sh/install | bash"
+fi
+
+# Put ~/.local/bin and ~/.bun/bin on PATH (this session + permanently).
+say "Setting up your PATH…"
+ensure_path
+have bun || fail "bun installation did not succeed."
+
+# --- fetch the project ------------------------------------------------------
+if [ -d "$SRC/.git" ]; then
+  say "Updating existing copy in $SRC…"
+  run git -C "$SRC" fetch --depth 1 origin "$BRANCH"
+  run git -C "$SRC" reset --hard "origin/$BRANCH"
+else
+  say "Downloading Pardus Assistant…"
+  rm -rf "$SRC"
+  run git clone --depth 1 --branch "$BRANCH" "$REPO" "$SRC"
+fi
+
+# --- install ----------------------------------------------------------------
+say "Installing (this can take a minute)…"
+run make -C "$SRC" install
+
+rm -f "$LOG"
+printf "\n%sDone!%s Launch it from your application menu, or run: %spardus-assistant%s\n" "$YEL" "$OFF" "$YEL" "$OFF"
+printf "%s(Open a new terminal, or run 'source ~/.profile', so the command is on your PATH.)%s\n" "$DIM" "$OFF"

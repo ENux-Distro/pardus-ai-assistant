@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Pardus Assistant launcher.
+#
+# Starts the backend (which quietly spins up the hidden OpenCode engine) if it
+# isn't already running, then opens the app in its own window. Run with --stop
+# to shut the background server down.
+set -euo pipefail
+
+# Resolve the project root even when this script is reached through a symlink
+# (e.g. ~/.local/bin/pardus-assistant -> <repo>/bin/pardus-assistant).
+APP_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+
+PORT="${PARDUS_PORT:-5174}"
+URL="http://127.0.0.1:${PORT}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/pardus-assistant"
+mkdir -p "$STATE"
+PIDFILE="$STATE/server.pid"
+LOG="$STATE/server.log"
+
+# Find bun even when launched from a desktop menu, where ~/.bun/bin may not be
+# on PATH.
+BUN="$(command -v bun 2>/dev/null || true)"
+[ -z "$BUN" ] && [ -x "$HOME/.bun/bin/bun" ] && BUN="$HOME/.bun/bin/bun"
+
+is_up() { curl -fsS "$URL/api/system" >/dev/null 2>&1; }
+
+stop_server() {
+  if [ -f "$PIDFILE" ]; then
+    kill "$(cat "$PIDFILE")" 2>/dev/null || true
+    rm -f "$PIDFILE"
+  fi
+  echo "Pardus Assistant stopped."
+}
+
+STARTED_HERE=0
+start_server() {
+  is_up && return 0
+  [ -n "$BUN" ] || { echo "Error: bun is required. Install it from https://bun.sh"; exit 1; }
+  ( cd "$APP_DIR" && exec "$BUN" run backend/src/server.ts ) >"$LOG" 2>&1 &
+  echo $! >"$PIDFILE"
+  STARTED_HERE=1
+  for _ in $(seq 1 60); do is_up && return 0; sleep 0.5; done
+  echo "Error: the server did not come up. See $LOG"; exit 1
+}
+
+# A graphical session must exist before we try to open any window.
+has_display() { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }
+
+# True if we can render a native WebKitGTK window (no browser chrome).
+has_webview() {
+  command -v python3 >/dev/null 2>&1 &&
+    python3 -c "import gi; gi.require_version('WebKit2','4.1')" >/dev/null 2>&1
+}
+
+# Open the UI in its own window. Prefer a native WebKitGTK window; fall back to a
+# Chromium app window, then to the default browser. If there's no display at all,
+# just leave the server running and tell the user the address.
+open_app() {
+  if ! has_display; then
+    echo "No graphical display detected. Open this address in your browser: $URL"
+    return 0
+  fi
+  if has_webview; then
+    # Foreground: when the user closes the window, tidy up the server we started.
+    # If the window can't start (e.g. no display access), fall through to a browser.
+    if python3 "$APP_DIR/bin/pardus-window.py" "$URL"; then
+      [ "$STARTED_HERE" = "1" ] && stop_server
+      return 0
+    fi
+  fi
+  local b
+  for b in enux-browser chromium chromium-browser google-chrome-stable google-chrome brave-browser microsoft-edge; do
+    if command -v "$b" >/dev/null 2>&1; then
+      setsid "$b" --app="$URL" --class=PardusAssistant >/dev/null 2>&1 &
+      return 0
+    fi
+  done
+  if command -v xdg-open >/dev/null 2>&1; then
+    setsid xdg-open "$URL" >/dev/null 2>&1 &
+  else
+    echo "Open this address in your browser: $URL"
+  fi
+}
+
+case "${1:-}" in
+  --stop) stop_server; exit 0 ;;
+  --status) is_up && echo "running at $URL" || echo "not running"; exit 0 ;;
+esac
+
+start_server
+echo "Pardus Assistant running at $URL"
+open_app

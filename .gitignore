@@ -1,0 +1,10 @@
+# Dependencies
+node_modules/
+
+# Runtime / logs
+backend/actions.log
+*.log
+
+# OS / editor cruft
+.DS_Store
+*.swp

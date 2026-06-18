@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pardus Assistant</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- Sidebar: branding + plain-language help -->
+      <aside class="sidebar">
+        <div class="logo">
+          <span class="logo-mark">P</span>
+          <span class="logo-text">Pardus<br /><b>Assistant</b></span>
+        </div>
+
+        <button id="newChat" class="new-chat">+ New conversation</button>
+
+        <div class="side-section">
+          <div class="side-title">Try asking</div>
+          <button class="suggestion" data-q="My Wi-Fi isn't working">My Wi-Fi isn't working</button>
+          <button class="suggestion" data-q="Install Discord for me">Install Discord for me</button>
+          <button class="suggestion" data-q="Why is my computer slow?">Why is my computer slow?</button>
+          <button class="suggestion" data-q="How do I take a screenshot?">How do I take a screenshot?</button>
+        </div>
+
+        <div class="side-section conv-section">
+          <div class="side-title">Conversations</div>
+          <div id="convList" class="conv-list"></div>
+        </div>
+
+        <div class="side-foot">
+          <div id="sysinfo" class="sysinfo">Checking your computer…</div>
+        </div>
+      </aside>
+
+      <!-- Main chat -->
+      <main class="main">
+        <div id="chat" class="chat">
+          <div class="welcome">
+            <div class="welcome-mark">P</div>
+            <h1>Hi! How can I help?</h1>
+            <p>Ask me anything about your computer in plain words, I'll explain it
+              simply and, if you want, do it for you. Nothing happens until you say yes.</p>
+          </div>
+        </div>
+
+        <form id="composer" class="composer">
+          <div class="composer-box">
+            <textarea id="input" rows="1" placeholder="Ask me anything…"></textarea>
+            <button type="submit" id="send" aria-label="Send">➤</button>
+          </div>
+          <div class="composer-row">
+            <label class="agent-toggle" title="Let me plan and carry out a whole task, step by step">
+              <input type="checkbox" id="agentMode" />
+              <span class="switch"></span>
+              <span>Do it for me (step by step)</span>
+            </label>
+            <div class="composer-hint">I'll always ask before changing anything.</div>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <!-- Confirmation dialog -->
+    <div id="modal" class="modal hidden">
+      <div class="modal-card">
+        <div id="modalTitle" class="modal-title"></div>
+        <p id="modalReason" class="modal-reason"></p>
+        <button id="modalToggle" class="link-btn">See the technical details</button>
+        <pre id="modalCmd" class="modal-cmd hidden"></pre>
+        <div class="modal-buttons">
+          <button id="modalCancel" class="btn-ghost">No, cancel</button>
+          <button id="modalConfirm" class="btn-primary">Yes, do it</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

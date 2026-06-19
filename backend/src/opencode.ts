@@ -7,13 +7,14 @@
 
 import { spawn, type ChildProcess } from "node:child_process"
 import { createServer } from "node:net"
+import { mkdirSync } from "node:fs"
 import {
   OPENCODE_CMD,
   OPENCODE_ARGS,
   OPENCODE_HOST,
   OPENCODE_PORT,
   SDK_ENTRY,
-  WORK_DIR,
+  ENGINE_DIR,
 } from "./config.ts"
 
 // Ask the OS for a free port near our preferred one, so a leftover/older engine
@@ -73,12 +74,18 @@ function waitForReady(child: ChildProcess): Promise<string> {
 export async function start(): Promise<void> {
   if (client) return
 
+  // Keep the engine rooted in its own tiny, empty directory — never the
+  // user's home. OpenCode rescans this tree (skills, AGENTS.md, project
+  // context) on every prompt, and a real $HOME full of repos/node_modules
+  // turns that into a multi-minute crawl per message.
+  mkdirSync(ENGINE_DIR, { recursive: true })
+
   const port = await freePort()
   proc = spawn(
     OPENCODE_CMD,
     [...OPENCODE_ARGS, "serve", "--hostname", OPENCODE_HOST, "--port", String(port)],
     {
-      cwd: WORK_DIR,
+      cwd: ENGINE_DIR,
       // Hidden: we capture stdio for the readiness probe and discard the rest.
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
@@ -88,7 +95,7 @@ export async function start(): Promise<void> {
   baseUrl = await waitForReady(proc)
 
   const sdk = await import(SDK_ENTRY)
-  client = sdk.createOpencodeClient({ baseUrl, directory: WORK_DIR })
+  client = sdk.createOpencodeClient({ baseUrl, directory: ENGINE_DIR })
 }
 
 // Open a fresh OpenCode session and return its id. Each saved conversation owns

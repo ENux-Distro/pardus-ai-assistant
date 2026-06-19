@@ -25,7 +25,8 @@ export const OPENCODE_PORT = Number(env.OPENCODE_PORT ?? 5179)
 // Path to the bundled SDK source. We import it directly so there is no build step.
 export const SDK_ENTRY = new URL("../../../opencode/packages/sdk/js/src/index.ts", import.meta.url).pathname
 
-// Working directory OpenCode operates in (the user's project / home).
+// Working directory confirmed commands actually run in (the user's home, so
+// "install X" feels like it happened in the normal place).
 export const WORK_DIR = env.PARDUS_WORKDIR ?? env.HOME ?? process.cwd()
 
 // Where saved conversations live. Follows the XDG data-dir convention so it
@@ -33,3 +34,11 @@ export const WORK_DIR = env.PARDUS_WORKDIR ?? env.HOME ?? process.cwd()
 export const DATA_DIR =
   env.PARDUS_DATA_DIR ??
   `${env.XDG_DATA_HOME ?? `${env.HOME}/.local/share`}/pardus-assistant`
+
+// Directory the OpenCode *engine* itself is rooted in. This is deliberately
+// NOT the user's home: on every prompt, OpenCode walks this directory (and
+// its parents) looking for skills/AGENTS.md/project context, and a $HOME full
+// of repos and node_modules turns that into a multi-minute (or worse) crawl
+// on every single message. Beginner chat never needs real project context, so
+// give the engine its own tiny, empty directory instead.
+export const ENGINE_DIR = env.PARDUS_ENGINE_DIR ?? `${DATA_DIR}/engine-workdir`

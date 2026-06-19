@@ -2,7 +2,21 @@
 // variable so the same backend works whether it is launched from `bun dev`,
 // from a packaged Tauri sidecar, or from a system service.
 
+import { existsSync } from "node:fs"
+
 const env = process.env
+
+// Locate the bundled OpenCode engine. It normally ships NESTED inside this repo
+// (./opencode), which is what a fresh `git clone` gets. A sibling checkout
+// (../opencode) is only used in dev setups. Resolving nested-first matters:
+// pointing at a non-existent sibling makes the engine fail with "Module not
+// found", which used to look like the whole app hanging.
+const ENGINE_SRC = (() => {
+  const nested = new URL("../../opencode/", import.meta.url).pathname
+  const sibling = new URL("../../../opencode/", import.meta.url).pathname
+  if (existsSync(nested)) return nested
+  return sibling
+})()
 
 // Where the backend listens for the GUI (web UI / Tauri webview).
 export const HTTP_HOST = env.PARDUS_HOST ?? "127.0.0.1"
@@ -16,14 +30,14 @@ export const HTTP_PORT = Number(env.PARDUS_PORT ?? 5174)
 export const OPENCODE_CMD = env.OPENCODE_CMD ?? "bun"
 export const OPENCODE_ARGS = env.OPENCODE_ARGS
   ? env.OPENCODE_ARGS.split(" ")
-  : ["run", new URL("../../../opencode/packages/opencode/src/index.ts", import.meta.url).pathname]
+  : ["run", `${ENGINE_SRC}packages/opencode/src/index.ts`]
 
 // The OpenCode server binds here. It is never exposed to the user.
 export const OPENCODE_HOST = "127.0.0.1"
 export const OPENCODE_PORT = Number(env.OPENCODE_PORT ?? 5179)
 
 // Path to the bundled SDK source. We import it directly so there is no build step.
-export const SDK_ENTRY = new URL("../../../opencode/packages/sdk/js/src/index.ts", import.meta.url).pathname
+export const SDK_ENTRY = `${ENGINE_SRC}packages/sdk/js/src/index.ts`
 
 // Working directory confirmed commands actually run in (the user's home, so
 // "install X" feels like it happened in the normal place).

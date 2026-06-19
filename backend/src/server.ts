@@ -9,13 +9,16 @@
 // shutdown, so the user never sees it.
 
 import { HTTP_HOST, HTTP_PORT } from "./config.ts"
-import { askStream, askAgentStream, createSession, ensureSession, start, stop } from "./opencode.ts"
+import { askStream, askAgentStream, createSession, ensureSession, isRunning, start, stop } from "./opencode.ts"
 import * as Conversations from "./conversations.ts"
 import { collect } from "./system.ts"
 import { classify } from "./safety.ts"
 import { run } from "./run.ts"
 
 const FRONTEND = new URL("../../frontend/", import.meta.url).pathname
+// Repo root of THIS running build. Exposed via /api/health so the launcher can
+// tell whether the server on the port is this clone or a stale/foreign one.
+const APP_ROOT = new URL("../../", import.meta.url).pathname.replace(/\/$/, "")
 
 const RISK_ORDER = { safe: 0, caution: 1, danger: 2 } as const
 
@@ -84,6 +87,12 @@ const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url)
     const path = url.pathname
+
+    // Identity probe for the launcher: which build is on this port, its pid, and
+    // whether the engine has come up. Lets the launcher refuse to silently reuse
+    // a stale or foreign server (the cause of "I edited the code but it's still
+    // running the old one").
+    if (path === "/api/health") return json({ ok: true, appRoot: APP_ROOT, pid: process.pid, engine: isRunning() })
 
     if (path === "/api/system") return json(collect())
 

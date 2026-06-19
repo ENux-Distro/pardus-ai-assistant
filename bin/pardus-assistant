@@ -24,23 +24,62 @@ BUN="$(command -v bun 2>/dev/null || true)"
 
 is_up() { curl -fsS "$URL/api/system" >/dev/null 2>&1; }
 
+# The repo root of the server currently answering on the port (via /api/health),
+# or empty if nothing/an older build without the endpoint is there.
+server_approot() {
+  curl -fsS "$URL/api/health" 2>/dev/null | sed -n 's/.*"appRoot":"\([^"]*\)".*/\1/p'
+}
+
 stop_server() {
+  # Graceful: the backend's SIGTERM handler also shuts the hidden engine down.
   if [ -f "$PIDFILE" ]; then
     kill "$(cat "$PIDFILE")" 2>/dev/null || true
     rm -f "$PIDFILE"
   fi
+  # Belt and braces: kill any backend/engine left running from THIS clone
+  # (e.g. started by hand with `bun run`, so never recorded in the pidfile).
+  pkill -f "$APP_DIR/backend/src/server.ts" 2>/dev/null || true
+  pkill -f "$APP_DIR/opencode/packages/opencode/src/index.ts" 2>/dev/null || true
   echo "Pardus Assistant stopped."
 }
 
 STARTED_HERE=0
 start_server() {
-  is_up && return 0
+  # Drop a stale pidfile whose process is already gone.
+  if [ -f "$PIDFILE" ] && ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+    rm -f "$PIDFILE"
+  fi
+
+  # Something is already serving this port. Only reuse it if it's THIS build;
+  # never silently adopt a stale or foreign server (that hid the real bug
+  # before — the launcher would keep using old code on the port forever).
+  if is_up; then
+    local running; running="$(server_approot)"
+    if [ "$running" = "$APP_DIR" ]; then
+      echo "Already running (this build) at $URL"
+      return 0
+    fi
+    echo "Error: port $PORT is already in use by a different Pardus Assistant." >&2
+    echo "  running from: ${running:-unknown (older build or another program)}" >&2
+    echo "  you launched: $APP_DIR" >&2
+    echo "Fix: stop it with 'pardus-assistant --stop', or run this one on another" >&2
+    echo "     port, e.g. PARDUS_PORT=5200 pardus-assistant" >&2
+    exit 1
+  fi
+
   [ -n "$BUN" ] || { echo "Error: bun is required. Install it from https://bun.sh"; exit 1; }
+  # Preflight: the engine can't start without its dependencies installed.
+  if [ ! -d "$APP_DIR/opencode/node_modules" ]; then
+    echo "Error: engine dependencies are missing. Run 'make install' first" >&2
+    echo "       (or: cd '$APP_DIR/opencode' && bun install)." >&2
+    exit 1
+  fi
+
   ( cd "$APP_DIR" && exec "$BUN" run backend/src/server.ts ) >"$LOG" 2>&1 &
   echo $! >"$PIDFILE"
   STARTED_HERE=1
   for _ in $(seq 1 60); do is_up && return 0; sleep 0.5; done
-  echo "Error: the server did not come up. See $LOG"; exit 1
+  echo "Error: the server did not come up. See $LOG" >&2; exit 1
 }
 
 # A graphical session must exist before we try to open any window.
@@ -84,7 +123,14 @@ open_app() {
 
 case "${1:-}" in
   --stop) stop_server; exit 0 ;;
-  --status) is_up && echo "running at $URL" || echo "not running"; exit 0 ;;
+  --restart) stop_server; sleep 1 ;;
+  --status)
+    if is_up; then
+      echo "running at $URL (build: $(server_approot || echo unknown))"
+    else
+      echo "not running"
+    fi
+    exit 0 ;;
 esac
 
 start_server

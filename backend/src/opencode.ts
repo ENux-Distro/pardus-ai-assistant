@@ -86,11 +86,17 @@ export async function start(): Promise<void> {
     [...OPENCODE_ARGS, "serve", "--hostname", OPENCODE_HOST, "--port", String(port)],
     {
       cwd: ENGINE_DIR,
-      // Hidden: we capture stdio for the readiness probe and discard the rest.
+      // Hidden from the user, but NOT discarded: we forward the engine's output
+      // to our own log. Without this, engine-side failures (no model/API key
+      // configured, provider errors) are invisible and look like the app just
+      // hanging forever. The user never sees this — it only hits the log file.
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
     },
   )
+  const logEngine = (chunk: Buffer) => process.stderr.write(`[engine] ${chunk}`)
+  proc.stdout?.on("data", logEngine)
+  proc.stderr?.on("data", logEngine)
 
   baseUrl = await waitForReady(proc)
 
@@ -200,15 +206,28 @@ async function stream(system: string, message: string, sessionID: string, onDelt
   const reader = events.body!.getReader()
   const decoder = new TextDecoder()
 
+  let error: string | undefined
+  // Kick off generation. If the prompt itself fails (e.g. no model/provider
+  // configured, auth error), surface that and stop waiting — otherwise we'd
+  // block on events that never arrive until the 120s timeout fires, which the
+  // user experiences as an endless hang with no answer.
   client.session
     .promptAsync({
       path: { id: sessionID },
       body: { system, tools: NO_TOOLS, parts: [{ type: "text", text: message }] },
     })
-    .catch(() => {})
+    .then((res: any) => {
+      if (res?.error) error = typeof res.error === "string" ? res.error : JSON.stringify(res.error)
+    })
+    .catch((e: any) => {
+      error = e?.message ? String(e.message) : String(e)
+    })
+    .finally(() => {
+      // Wake the read loop so it notices the error instead of waiting on /event.
+      if (error) ac.abort()
+    })
 
   let full = ""
-  let error: string | undefined
   let gotDelta = false
   let buf = ""
   // Map each part id to its kind. We only stream "text" parts — never the
@@ -216,6 +235,7 @@ async function stream(system: string, message: string, sessionID: string, onDelt
   const partKind = new Map<string, string>()
   try {
     outer: for (;;) {
+      if (error) break
       const { value, done } = await reader.read()
       if (done) break
       buf += decoder.decode(value, { stream: true })
@@ -246,6 +266,10 @@ async function stream(system: string, message: string, sessionID: string, onDelt
         if (ev.type === "session.idle" && gotDelta) break outer
       }
     }
+  } catch (e: any) {
+    // An intentional abort (prompt error or timeout) is normal termination, not
+    // a crash — the real reason is already in `error` or surfaced below.
+    if (e?.name !== "AbortError" && !error) error = e?.message ? String(e.message) : String(e)
   } finally {
     clearTimeout(timeout)
     ac.abort()

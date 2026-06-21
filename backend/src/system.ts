@@ -3,6 +3,7 @@
 // of this is read-only — nothing here changes the system.
 
 import { spawnSync } from "node:child_process"
+import { detectLang } from "./locale.ts"
 
 function read(path: string): string | undefined {
   try {
@@ -36,5 +37,7 @@ export function collect() {
     shell: process.env.SHELL ?? "",
     packageManagers: KNOWN_MANAGERS.filter(has).map((m) => m.replace("-install", "")),
     user: process.env.USER ?? "",
+    // UI language ("tr" or "en"), so the frontend can match the system locale.
+    lang: detectLang(),
   }
 }

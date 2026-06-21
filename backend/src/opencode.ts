@@ -16,6 +16,7 @@ import {
   SDK_ENTRY,
   ENGINE_DIR,
 } from "./config.ts"
+import { detectLang } from "./locale.ts"
 
 // Ask the OS for a free port near our preferred one, so a leftover/older engine
 // holding the default port can never block startup again.
@@ -131,6 +132,15 @@ export function stop(): void {
   client = undefined
 }
 
+// Reply in the user's language. Detected once from the system locale; Pardus is
+// Turkish by default but we follow whatever the OS reports. We also tell the
+// model to mirror the user if they switch languages mid-conversation.
+const LANG = detectLang()
+const LANG_DIRECTIVE =
+  LANG === "tr"
+    ? "- Always answer in Turkish (Türkçe), in natural everyday language. If the user clearly writes in another language, reply in that language instead."
+    : "- Always answer in English. If the user clearly writes in another language, reply in that language instead."
+
 // Persona: this is a Linux helper for absolute beginners, not a coding agent.
 // Keep answers short and friendly, and put any command on its own ```bash line
 // so the GUI can turn it into a safe action button.
@@ -138,6 +148,7 @@ const PERSONA = [
   "You are Pardus Assistant, a friendly helper for people who are brand new to Linux.",
   "Many users have just switched from Windows and know nothing technical.",
   "Rules:",
+  LANG_DIRECTIVE,
   "- Use plain, warm language. Never assume Linux knowledge. Avoid jargon; if you must use a term, explain it in a few words.",
   "- Keep answers short: a one-line reassurance, then simple numbered steps.",
   "- When a step needs a command, put that command ALONE on its own line inside a ```bash code block. One command per block. The app turns these into safe buttons the user can click.",

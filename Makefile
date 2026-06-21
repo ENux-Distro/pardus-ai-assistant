@@ -68,7 +68,8 @@ no-sudo:
 # runs the standalone build. Output: $(OPENCODE_DIR)/packages/opencode/dist/...
 .PHONY: engine
 engine: no-sudo install-bun
-	@BUN="$$(command -v bun 2>/dev/null || echo "$(HOME)/.bun/bin/bun")"; \
+	@export PATH="$(HOME)/.bun/bin:$$PATH"; \
+	BUN="$$(command -v bun)"; \
 	if [ -z "$$BUN" ] || [ ! -x "$$BUN" ]; then echo "Error: bun not found after install."; exit 1; fi; \
 	if [ -z "$$(command -v git)" ]; then echo "Error: git is required."; exit 1; fi; \
 	if [ -d "$(OPENCODE_DIR)/.git" ]; then \
@@ -81,9 +82,9 @@ engine: no-sudo install-bun
 		git clone --depth 1 --branch "$(ENGINE_BRANCH)" "$(ENGINE_REMOTE)" "$(OPENCODE_DIR)"; \
 	fi; \
 	echo "Installing engine dependencies…"; \
-	cd "$(OPENCODE_DIR)" && "$$BUN" install; \
+	cd "$(OPENCODE_DIR)" && bun install; \
 	echo "Compiling the engine — this can take a few minutes…"; \
-	cd "$(OPENCODE_DIR)" && "$$BUN" run ./packages/opencode/script/build.ts --single; \
+	cd "$(OPENCODE_DIR)" && bun run ./packages/opencode/script/build.ts --single; \
 	echo "Engine compiled."
 
 .PHONY: install
@@ -108,9 +109,10 @@ install: engine
 
 .PHONY: run
 run: no-sudo install-bun
-	@BUN="$$(command -v bun 2>/dev/null || echo "$(HOME)/.bun/bin/bun")"; \
+	@export PATH="$(HOME)/.bun/bin:$$PATH"; \
+	BUN="$$(command -v bun)"; \
 	if [ -z "$$BUN" ] || [ ! -x "$$BUN" ]; then echo "Error: bun not found after install."; exit 1; fi; \
-	cd "$(APP_DIR)" && "$$BUN" run backend/src/server.ts
+	cd "$(APP_DIR)" && bun run backend/src/server.ts
 
 .PHONY: app
 app:

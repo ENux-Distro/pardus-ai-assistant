@@ -11,7 +11,7 @@
 set -euo pipefail
 
 REPO="${PARDUS_REPO:-https://github.com/ENux-Distro/pardus-ai-assistant.git}"
-BRANCH="${PARDUS_BRANCH:-main}"
+BRANCH="${PARDUS_BRANCH:-dev}"
 SRC="${PARDUS_SRC:-$HOME/.local/share/pardus-ai-assistant}"
 LOG="$(mktemp /tmp/pardus-install.XXXXXX.log)"
 

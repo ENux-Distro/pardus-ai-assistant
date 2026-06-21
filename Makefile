@@ -22,7 +22,7 @@ BUN := $(shell command -v bun 2>/dev/null || ([ -x "$(HOME)/.bun/bin/bun" ] && e
 # NOT committed to this repo (so it stays patchable and up to date). It lives in
 # ./opencode inside the app dir.
 ENGINE_REMOTE ?= https://github.com/ENux-Distro/opencode.git
-ENGINE_BRANCH ?= main
+ENGINE_BRANCH ?= dev
 OPENCODE_DIR  := $(APP_DIR)/opencode
 
 .DEFAULT_GOAL := help

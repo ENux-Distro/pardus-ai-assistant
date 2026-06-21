@@ -9,9 +9,10 @@
 
 SHELL := /bin/bash
 
-BINDIR  ?= $(HOME)/.local/bin
-APPSDIR ?= $(HOME)/.local/share/applications
-APP_DIR := $(abspath .)
+BINDIR   ?= $(HOME)/.local/bin
+SHAREDIR ?= $(HOME)/.local/share/pardus-assistant
+APPSDIR  ?= $(HOME)/.local/share/applications
+APP_DIR  := $(abspath .)
 LAUNCHER := $(APP_DIR)/bin/pardus-assistant
 DESKTOP  := $(APPSDIR)/pardus-assistant.desktop
 
@@ -89,15 +90,17 @@ engine: no-sudo install-bun
 
 .PHONY: install
 install: engine
-	@chmod +x "$(LAUNCHER)"
-	@mkdir -p "$(BINDIR)" "$(APPSDIR)"
-	@ln -sf "$(LAUNCHER)" "$(BINDIR)/pardus-assistant"
+	@echo "Installing to $(SHAREDIR)…"
+	@mkdir -p "$(SHAREDIR)" "$(BINDIR)" "$(APPSDIR)"
+	@cp -a "$(APP_DIR)/." "$(SHAREDIR)/"
+	@chmod +x "$(SHAREDIR)/bin/pardus-assistant"
+	@ln -sf "$(SHAREDIR)/bin/pardus-assistant" "$(BINDIR)/pardus-assistant"
 	@printf '%s\n' \
 		'[Desktop Entry]' \
 		'Type=Application' \
 		'Name=Pardus Assistant' \
 		'Comment=A friendly AI helper for your computer' \
-		'Exec=$(BINDIR)/pardus-assistant' \
+		'Exec=$(SHAREDIR)/bin/pardus-assistant' \
 		'Icon=system-help' \
 		'Terminal=false' \
 		'Categories=Utility;System;' \
@@ -129,7 +132,8 @@ logs:
 .PHONY: uninstall
 uninstall:
 	@rm -f "$(BINDIR)/pardus-assistant" "$(DESKTOP)"
-	@echo "Removed command and menu entry. Saved conversations were left untouched."
+	@rm -rf "$(SHAREDIR)"
+	@echo "Removed command, menu entry, and installed files. Saved conversations were left untouched."
 
 STATE_DIR := $${XDG_STATE_HOME:-$$HOME/.local/state}/pardus-assistant
 

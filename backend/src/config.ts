@@ -6,11 +6,11 @@ import { existsSync } from "node:fs"
 
 const env = process.env
 
-// Locate the bundled OpenCode engine. It normally ships NESTED inside this repo
-// (./opencode), which is what a fresh `git clone` gets. A sibling checkout
-// (../opencode) is only used in dev setups. Resolving nested-first matters:
-// pointing at a non-existent sibling makes the engine fail with "Module not
-// found", which used to look like the whole app hanging.
+// Locate the OpenCode engine. The installer clones the ENux-Distro/opencode
+// fork into ./opencode and compiles it (see `make engine`); it is NOT committed
+// to this repo. A sibling checkout (../opencode) is only used in dev setups.
+// Resolving nested-first matters: pointing at a non-existent path makes the
+// engine fail with "Module not found", which used to look like the app hanging.
 const ENGINE_SRC = (() => {
   const nested = new URL("../../opencode/", import.meta.url).pathname
   const sibling = new URL("../../../opencode/", import.meta.url).pathname
@@ -18,19 +18,27 @@ const ENGINE_SRC = (() => {
   return sibling
 })()
 
+// The compiled single binary produced by the fork's build (build.ts --single):
+//   <engine>/packages/opencode/dist/opencode-<platform>-<arch>/bin/opencode
+// We prefer this over running raw TypeScript: it starts far faster (no per-boot
+// transpile) and is what `make engine` produces. If it's missing (dev setup
+// that hasn't compiled yet), we fall back to running from source with Bun.
+const ENGINE_BIN = `${ENGINE_SRC}packages/opencode/dist/opencode-${process.platform}-${process.arch}/bin/opencode`
+const HAVE_BIN = existsSync(ENGINE_BIN)
+
 // Where the backend listens for the GUI (web UI / Tauri webview).
 export const HTTP_HOST = env.PARDUS_HOST ?? "127.0.0.1"
 export const HTTP_PORT = Number(env.PARDUS_PORT ?? 5174)
 
-// How we launch the (invisible) OpenCode server.
-//
-// We do not require `opencode` to be on PATH. By default we run it straight
-// from the bundled source with Bun. In a packaged build, point OPENCODE_CMD at
-// the real `opencode` binary instead.
-export const OPENCODE_CMD = env.OPENCODE_CMD ?? "bun"
+// How we launch the (invisible) OpenCode server. We do not require `opencode`
+// on PATH: prefer the compiled binary, else run from source with Bun. Both are
+// overridable via OPENCODE_CMD / OPENCODE_ARGS (e.g. a Tauri sidecar).
+export const OPENCODE_CMD = env.OPENCODE_CMD ?? (HAVE_BIN ? ENGINE_BIN : "bun")
 export const OPENCODE_ARGS = env.OPENCODE_ARGS
   ? env.OPENCODE_ARGS.split(" ")
-  : ["run", `${ENGINE_SRC}packages/opencode/src/index.ts`]
+  : HAVE_BIN
+    ? []
+    : ["run", `${ENGINE_SRC}packages/opencode/src/index.ts`]
 
 // The OpenCode server binds here. It is never exposed to the user.
 export const OPENCODE_HOST = "127.0.0.1"

@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# OpenCode engine — cloned + compiled from the fork by `make engine`, never committed
+/opencode/
+
 # Runtime / logs
 backend/actions.log
 *.log

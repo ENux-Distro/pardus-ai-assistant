@@ -18,15 +18,20 @@ DESKTOP  := $(APPSDIR)/pardus-assistant.desktop
 # Find bun on PATH, falling back to the usual per-user install location.
 BUN := $(shell command -v bun 2>/dev/null || ([ -x "$(HOME)/.bun/bin/bun" ] && echo "$(HOME)/.bun/bin/bun"))
 
-# The OpenCode engine source — nested (./opencode) or a sibling (../opencode).
-OPENCODE_DIR := $(abspath $(if $(wildcard opencode),opencode,../opencode))
+# The OpenCode engine is cloned + compiled from our fork by `make engine`; it is
+# NOT committed to this repo (so it stays patchable and up to date). It lives in
+# ./opencode inside the app dir.
+ENGINE_REMOTE ?= https://github.com/ENux-Distro/opencode.git
+ENGINE_BRANCH ?= main
+OPENCODE_DIR  := $(APP_DIR)/opencode
 
 .DEFAULT_GOAL := help
 
 .PHONY: help
 help:
 	@echo "Pardus Assistant"
-	@echo "  make install     install engine deps, the 'pardus-assistant' command and menu entry"
+	@echo "  make install     clone+compile the engine, install the command and menu entry"
+	@echo "  make engine      clone/update the OpenCode fork and compile it"
 	@echo "  make run         run the backend in the foreground (http://127.0.0.1:5174)"
 	@echo "  make app         start the server (if needed) and open the app window"
 	@echo "  make stop        stop the background server"
@@ -41,15 +46,30 @@ no-sudo:
 		exit 1; \
 	fi
 
-.PHONY: deps
-deps: no-sudo
+# Clone (or update) the OpenCode fork and compile it into a single native binary.
+# This is the heavy step: it fetches the engine source, installs its deps, and
+# runs the standalone build. Output: $(OPENCODE_DIR)/packages/opencode/dist/...
+.PHONY: engine
+engine: no-sudo
 	@if [ -z "$(BUN)" ]; then echo "Error: bun is required. Install from https://bun.sh"; exit 1; fi
-	@if [ ! -d "$(OPENCODE_DIR)" ]; then echo "Error: OpenCode engine not found at $(OPENCODE_DIR)"; exit 1; fi
-	@echo "Installing OpenCode engine dependencies (one-time)…"
+	@if [ -z "$$(command -v git)" ]; then echo "Error: git is required."; exit 1; fi
+	@if [ -d "$(OPENCODE_DIR)/.git" ]; then \
+		echo "Updating the OpenCode engine fork…"; \
+		git -C "$(OPENCODE_DIR)" fetch --depth 1 origin "$(ENGINE_BRANCH)"; \
+		git -C "$(OPENCODE_DIR)" reset --hard "origin/$(ENGINE_BRANCH)"; \
+	else \
+		echo "Cloning the OpenCode engine fork ($(ENGINE_REMOTE))…"; \
+		rm -rf "$(OPENCODE_DIR)"; \
+		git clone --depth 1 --branch "$(ENGINE_BRANCH)" "$(ENGINE_REMOTE)" "$(OPENCODE_DIR)"; \
+	fi
+	@echo "Installing engine dependencies…"
 	@cd "$(OPENCODE_DIR)" && "$(BUN)" install
+	@echo "Compiling the engine — this can take a few minutes…"
+	@cd "$(OPENCODE_DIR)" && "$(BUN)" run ./packages/opencode/script/build.ts --single
+	@echo "Engine compiled."
 
 .PHONY: install
-install: deps
+install: engine
 	@chmod +x "$(LAUNCHER)"
 	@mkdir -p "$(BINDIR)" "$(APPSDIR)"
 	@ln -sf "$(LAUNCHER)" "$(BINDIR)/pardus-assistant"
@@ -99,8 +119,8 @@ clean:
 	@rm -f "$(STATE_DIR)/server.log" "$(STATE_DIR)/server.pid"
 	@echo "Cleaned logs and runtime files. Saved conversations were left untouched."
 
-# Also remove the installed engine dependencies (run `make install` again after).
+# Also remove the engine's deps and compiled output (run `make engine` after).
 .PHONY: distclean
 distclean: clean
-	@rm -rf "$(OPENCODE_DIR)/node_modules"
-	@echo "Removed engine dependencies."
+	@rm -rf "$(OPENCODE_DIR)/node_modules" "$(OPENCODE_DIR)/packages/opencode/dist"
+	@echo "Removed engine dependencies and compiled binary."

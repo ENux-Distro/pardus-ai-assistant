@@ -41,7 +41,8 @@ pardus-assistant/
       server.ts            HTTP + JSON API, serves the frontend
   frontend/                Plain HTML/CSS/JS (framework-free, Tauri-ready)
     index.html  styles.css  app.js
-  opencode/                Bundled OpenCode source (the engine)
+  opencode/                OpenCode engine — cloned + compiled from our fork by
+                           `make engine` (not committed; gitignored)
 ```
 
 **Why the engine is wrapped, not shelled out to:** OpenCode ships a headless
@@ -71,13 +72,16 @@ curl -fsSL https://raw.githubusercontent.com/ENux-Distro/pardus-ai-assistant/mai
 Or manually, requires Bun 1.3+, from this directory:
 
 ```bash
-make install     # installs engine deps + a `pardus-assistant` command + menu entry
+make install     # clone+compile the engine + a `pardus-assistant` command + menu entry
 pardus-assistant # starts the server (hidden) and opens the app in its own window
 ```
 
-`make install` does three things: installs the bundled engine's dependencies,
-symlinks a `pardus-assistant` launcher into `~/.local/bin`, and adds a "Pardus
-Assistant" entry to your application menu (so you can launch it like any app).
+`make install` does three things: **clones and compiles the OpenCode engine
+from our fork** (`ENux-Distro/opencode`) into `./opencode` — the slow,
+first-time step, a few minutes — then symlinks a `pardus-assistant` launcher
+into `~/.local/bin`, and adds a "Pardus Assistant" entry to your application
+menu. Re-running `make install` (or `make engine`) updates and recompiles the
+engine, so it stays patchable and current rather than frozen at clone time.
 
 Other targets:
 

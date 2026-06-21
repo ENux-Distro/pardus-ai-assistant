@@ -51,6 +51,12 @@ if ! have git; then
   else fail "git is required but not installed."; fi
 fi
 
+# unzip (bun installer extracts a zip; best-effort on apt)
+if ! have unzip && have apt-get; then
+  say "Installing unzip…"
+  run sudo apt-get install -y -qq unzip
+fi
+
 # WebKit window dependencies (for the native app window). Best-effort on apt.
 if have apt-get; then
   if ! python3 -c "import gi; gi.require_version('WebKit2','4.1')" >/dev/null 2>&1; then
@@ -63,13 +69,22 @@ fi
 # bun (installs into ~/.bun, no sudo)
 if ! have bun && [ ! -x "$HOME/.bun/bin/bun" ]; then
   say "Installing bun…"
-  run bash -c "curl -fsSL https://bun.sh/install | bash"
+  if ! have unzip; then
+    fail "unzip is required to install bun."
+  fi
+  # Pipe the installer script to bash to run it; output goes to the log.
+  if ! curl -fsSL https://bun.sh/install | bash >>"$LOG" 2>&1; then
+    fail "bun installer script failed."
+  fi
+  if [ ! -x "$HOME/.bun/bin/bun" ]; then
+    fail "bun installed but binary not found at ~/.bun/bin/bun."
+  fi
 fi
 
 # Put ~/.local/bin and ~/.bun/bin on PATH (this session + permanently).
 say "Setting up your PATH…"
 ensure_path
-have bun || fail "bun installation did not succeed."
+have bun || fail "bun is still not on PATH after installation."
 
 # --- fetch the project ------------------------------------------------------
 if [ -d "$SRC/.git" ]; then

@@ -38,6 +38,23 @@ help:
 	@echo "  make logs        follow the server log"
 	@echo "  make uninstall   remove the command and menu entry"
 
+# Install bun to ~/.bun if not already on PATH.
+.PHONY: install-bun
+install-bun: no-sudo
+	@if command -v bun >/dev/null 2>&1; then \
+		:; \
+	elif [ -x "$(HOME)/.bun/bin/bun" ]; then \
+		export PATH="$(HOME)/.bun/bin:$$PATH"; \
+	else \
+		echo "Installing bun…"; \
+		curl -fsSL https://bun.sh/install | bash; \
+		if [ ! -x "$(HOME)/.bun/bin/bun" ]; then \
+			echo "Error: bun installation failed."; \
+			exit 1; \
+		fi; \
+		export PATH="$(HOME)/.bun/bin:$$PATH"; \
+	fi
+
 .PHONY: no-sudo
 no-sudo:
 	@if [ "$$(id -u)" = "0" ]; then \
@@ -50,10 +67,11 @@ no-sudo:
 # This is the heavy step: it fetches the engine source, installs its deps, and
 # runs the standalone build. Output: $(OPENCODE_DIR)/packages/opencode/dist/...
 .PHONY: engine
-engine: no-sudo
-	@if [ -z "$(BUN)" ]; then echo "Error: bun is required. Install from https://bun.sh"; exit 1; fi
-	@if [ -z "$$(command -v git)" ]; then echo "Error: git is required."; exit 1; fi
-	@if [ -d "$(OPENCODE_DIR)/.git" ]; then \
+engine: no-sudo install-bun
+	@BUN="$$(command -v bun 2>/dev/null || echo "$(HOME)/.bun/bin/bun")"; \
+	if [ -z "$$BUN" ] || [ ! -x "$$BUN" ]; then echo "Error: bun not found after install."; exit 1; fi; \
+	if [ -z "$$(command -v git)" ]; then echo "Error: git is required."; exit 1; fi; \
+	if [ -d "$(OPENCODE_DIR)/.git" ]; then \
 		echo "Updating the OpenCode engine fork…"; \
 		git -C "$(OPENCODE_DIR)" fetch --depth 1 origin "$(ENGINE_BRANCH)"; \
 		git -C "$(OPENCODE_DIR)" reset --hard "origin/$(ENGINE_BRANCH)"; \
@@ -61,12 +79,12 @@ engine: no-sudo
 		echo "Cloning the OpenCode engine fork ($(ENGINE_REMOTE))…"; \
 		rm -rf "$(OPENCODE_DIR)"; \
 		git clone --depth 1 --branch "$(ENGINE_BRANCH)" "$(ENGINE_REMOTE)" "$(OPENCODE_DIR)"; \
-	fi
-	@echo "Installing engine dependencies…"
-	@cd "$(OPENCODE_DIR)" && "$(BUN)" install
-	@echo "Compiling the engine — this can take a few minutes…"
-	@cd "$(OPENCODE_DIR)" && "$(BUN)" run ./packages/opencode/script/build.ts --single
-	@echo "Engine compiled."
+	fi; \
+	echo "Installing engine dependencies…"; \
+	cd "$(OPENCODE_DIR)" && "$$BUN" install; \
+	echo "Compiling the engine — this can take a few minutes…"; \
+	cd "$(OPENCODE_DIR)" && "$$BUN" run ./packages/opencode/script/build.ts --single; \
+	echo "Engine compiled."
 
 .PHONY: install
 install: engine
@@ -89,9 +107,10 @@ install: engine
 	@echo "(If 'pardus-assistant' isn't found, add $(BINDIR) to your PATH.)"
 
 .PHONY: run
-run: no-sudo
-	@if [ -z "$(BUN)" ]; then echo "Error: bun is required. Install from https://bun.sh"; exit 1; fi
-	@cd "$(APP_DIR)" && "$(BUN)" run backend/src/server.ts
+run: no-sudo install-bun
+	@BUN="$$(command -v bun 2>/dev/null || echo "$(HOME)/.bun/bin/bun")"; \
+	if [ -z "$$BUN" ] || [ ! -x "$$BUN" ]; then echo "Error: bun not found after install."; exit 1; fi; \
+	cd "$(APP_DIR)" && "$$BUN" run backend/src/server.ts
 
 .PHONY: app
 app:

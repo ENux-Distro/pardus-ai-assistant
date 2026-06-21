@@ -44,35 +44,16 @@ printf "%sPardus Assistant installer%s\n" "$YEL" "$OFF"
 # --- prerequisites ----------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# git
-if ! have git; then
-  say "Installing git…"
-  if have apt-get; then run sudo apt-get update -qq; run sudo apt-get install -y -qq git
-  else fail "git is required but not installed."; fi
-fi
-
-# unzip (bun installer extracts a zip; best-effort on apt)
-if ! have unzip && have apt-get; then
-  say "Installing unzip…"
-  run sudo apt-get install -y -qq unzip
-fi
-
-# WebKit window dependencies (for the native app window). Best-effort on apt.
-if have apt-get; then
-  if ! python3 -c "import gi; gi.require_version('WebKit2','4.1')" >/dev/null 2>&1; then
-    say "Installing app-window dependencies…"
-    run sudo apt-get update -qq
-    run sudo apt-get install -y -qq python3-gi gir1.2-webkit2-4.1 || true
-  fi
-fi
-
-# bun (installs into ~/.bun, no sudo)
+# bun (installs into ~/.bun, no sudo) — first, before anything else.
 if ! have bun && [ ! -x "$HOME/.bun/bin/bun" ]; then
   say "Installing bun…"
   if ! have unzip; then
-    fail "unzip is required to install bun."
+    if have apt-get; then
+      run sudo apt-get install -y -qq unzip
+    else
+      fail "unzip is required to install bun."
+    fi
   fi
-  # Pipe the installer script to bash to run it; output goes to the log.
   if ! curl -fsSL https://bun.sh/install | bash >>"$LOG" 2>&1; then
     fail "bun installer script failed."
   fi
@@ -85,6 +66,22 @@ fi
 say "Setting up your PATH…"
 ensure_path
 have bun || fail "bun is still not on PATH after installation."
+
+# git (needed for cloning the project)
+if ! have git; then
+  say "Installing git…"
+  if have apt-get; then run sudo apt-get update -qq; run sudo apt-get install -y -qq git
+  else fail "git is required but not installed."; fi
+fi
+
+# WebKit window dependencies (for the native app window). Best-effort on apt.
+if have apt-get; then
+  if ! python3 -c "import gi; gi.require_version('WebKit2','4.1')" >/dev/null 2>&1; then
+    say "Installing app-window dependencies…"
+    run sudo apt-get update -qq
+    run sudo apt-get install -y -qq python3-gi gir1.2-webkit2-4.1 || true
+  fi
+fi
 
 # --- fetch the project ------------------------------------------------------
 if [ -d "$SRC/.git" ]; then

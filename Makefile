@@ -38,6 +38,7 @@ help:
 	@echo "  make stop        stop the background server"
 	@echo "  make logs        follow the server log"
 	@echo "  make uninstall   remove the command and menu entry"
+	@echo "  make deb         build a self-contained .deb (needs 'make engine' first)"
 
 # Install bun to ~/.bun if not already on PATH.
 .PHONY: install-bun
@@ -149,3 +150,10 @@ clean:
 distclean: clean
 	@rm -rf "$(OPENCODE_DIR)/node_modules" "$(OPENCODE_DIR)/packages/opencode/dist"
 	@echo "Removed engine dependencies and compiled binary."
+
+# Build a self-contained .deb (bundles its own bun runtime + the compiled
+# engine binary — no bun/git/network needed on the machine that installs it).
+# Output: dist-deb/pardus-assistant_<version>_<arch>.deb
+.PHONY: deb
+deb: no-sudo
+	@bash "$(APP_DIR)/packaging/build-deb.sh"

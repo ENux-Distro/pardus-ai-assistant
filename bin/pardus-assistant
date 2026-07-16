@@ -17,9 +17,12 @@ mkdir -p "$STATE"
 PIDFILE="$STATE/server.pid"
 LOG="$STATE/server.log"
 
-# Find bun even when launched from a desktop menu, where ~/.bun/bin may not be
-# on PATH.
-BUN="$(command -v bun 2>/dev/null || true)"
+# Find bun. A packaged install ships its own private runtime right next to
+# the app (see packaging/build-deb.sh) so it never depends on the user having
+# bun on PATH or installed at all; a source/dev checkout falls back to PATH,
+# then the usual per-user install location.
+BUN="$([ -x "$APP_DIR/../runtime/bun" ] && echo "$APP_DIR/../runtime/bun" || true)"
+[ -z "$BUN" ] && BUN="$(command -v bun 2>/dev/null || true)"
 [ -z "$BUN" ] && [ -x "$HOME/.bun/bin/bun" ] && BUN="$HOME/.bun/bin/bun"
 
 is_up() { curl -fsS "$URL/api/system" >/dev/null 2>&1; }
@@ -68,10 +71,13 @@ start_server() {
   fi
 
   [ -n "$BUN" ] || { echo "Error: bun is required. Install it from https://bun.sh"; exit 1; }
-  # Preflight: the engine can't start without its dependencies installed.
-  if [ ! -d "$APP_DIR/opencode/node_modules" ]; then
-    echo "Error: engine dependencies are missing. Run 'make install' first" >&2
-    echo "       (or: cd '$APP_DIR/opencode' && bun install)." >&2
+  # Preflight: the engine can't start unless it's either compiled (packaged
+  # install ships the single binary directly) or its dev deps are installed
+  # (source checkout, run from TypeScript).
+  if ! ls "$APP_DIR"/opencode/packages/opencode/dist/*/bin/opencode >/dev/null 2>&1 &&
+     [ ! -d "$APP_DIR/opencode/node_modules" ]; then
+    echo "Error: the OpenCode engine isn't built. Run 'make install' first" >&2
+    echo "       (or: cd '$APP_DIR' && make engine)." >&2
     exit 1
   fi
 

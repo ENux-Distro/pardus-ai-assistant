@@ -128,6 +128,22 @@ reconstructed from the saved transcript when a chat is reopened.
 | `OPENCODE_CMD`  | `bun`                | how to launch the engine                 |
 | `PARDUS_WORKDIR`| `$HOME`              | folder the assistant operates in         |
 
+## Building a .deb
+
+```bash
+make engine   # compile the OpenCode engine first, if you haven't already
+make deb      # -> dist-deb/pardus-assistant_<version>_<arch>.deb
+```
+
+The .deb is fully self-contained: it bundles its own private `bun` runtime
+and the compiled engine binary, so installing it (`sudo dpkg -i
+dist-deb/pardus-assistant_*.deb`) needs no network access, no `bun`, and no
+`git` on the target machine — just `sudo apt install -f` afterwards if
+`python3-gi` / `gir1.2-webkit2-4.1` (native window support, recommended but
+optional) aren't already present. Installs to `/opt/pardus-assistant`, with
+`/usr/bin/pardus-assistant` and a menu entry; `sudo dpkg -r pardus-assistant`
+removes the app but leaves each user's saved conversations in place.
+
 ## Desktop shell (Tauri) — next step
 
 The toolchain isn't installed on this machine yet. To add the desktop wrapper:

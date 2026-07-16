@@ -4,6 +4,9 @@ node_modules/
 # OpenCode engine — cloned + compiled from the fork by `make engine`, never committed
 /opencode/
 
+# .deb build output
+/dist-deb/
+
 # Runtime / logs
 backend/actions.log
 *.log

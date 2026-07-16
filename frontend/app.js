@@ -73,6 +73,11 @@ const I18N = {
     // hidden prompt sent to the AI when a command fails
     explainPrefix: (cmd, out) =>
       `I tried to run "${cmd}" and it failed. Here is the output:\n\n${out}\n\nExplain what went wrong in simple terms and how to fix it.`,
+    // models
+    modelLabel: "Model",
+    switchingModel: (label) => `That one's full up — trying ${label}…`,
+    limitReached: "All the free helpers are busy right now. Starting a new conversation usually fixes it.",
+    startNewChat: "Start a new conversation",
   },
   tr: {
     newChat: "+ Yeni sohbet",
@@ -132,6 +137,10 @@ const I18N = {
     couldNotConnect: "Şu anda bağlanamadım. Lütfen tekrar dene.",
     explainPrefix: (cmd, out) =>
       `"${cmd}" komutunu çalıştırmaya çalıştım ve başarısız oldu. İşte çıktısı:\n\n${out}\n\nNeyin yanlış gittiğini basit bir dille açıkla ve nasıl düzeltileceğini söyle.`,
+    modelLabel: "Model",
+    switchingModel: (label) => `O doluymuş — ${label} deniyorum…`,
+    limitReached: "Şu anda tüm ücretsiz yardımcılar meşgul. Yeni bir sohbet başlatmak genelde işe yarar.",
+    startNewChat: "Yeni sohbet başlat",
   },
 }
 function t(key) {
@@ -141,6 +150,31 @@ function t(key) {
 // The conversation currently shown. null = a fresh, unsaved chat; the backend
 // creates and returns an id on the first message.
 let currentConversationId = null
+
+// The user's preferred free model, remembered across sessions. If it hits its
+// limit the backend automatically falls back to the next free model for that
+// message — this is just which one to try first.
+let currentModelId = localStorage.getItem("pardus_model") || null
+
+async function loadModels() {
+  const select = $("modelSelect")
+  let models = []
+  try {
+    models = await fetch("/api/models").then((r) => r.json())
+  } catch {}
+  if (!models.length) {
+    select.parentElement.style.display = "none"
+    return
+  }
+  select.innerHTML = models.map((m) => `<option value="${escapeHtml(m.modelID)}">${escapeHtml(m.label)}</option>`).join("")
+  const valid = models.some((m) => m.modelID === currentModelId)
+  currentModelId = valid ? currentModelId : models[0].modelID
+  select.value = currentModelId
+  select.onchange = () => {
+    currentModelId = select.value
+    localStorage.setItem("pardus_model", currentModelId)
+  }
+}
 
 // ---------- tiny markdown (bold, inline code, code blocks) ----------
 function escapeHtml(s) {
@@ -293,7 +327,7 @@ function explainError(command, output) {
 }
 
 // ---------- shared SSE reader: streams delta/done/error events ----------
-async function streamPost(url, payload, { onDelta, onDone, onError }) {
+async function streamPost(url, payload, { onDelta, onDone, onError, onRetry }) {
   let res
   try {
     res = await fetch(url, {
@@ -319,10 +353,38 @@ async function streamPost(url, payload, { onDelta, onDone, onError }) {
       if (!line) continue
       const u = JSON.parse(line)
       if (u.type === "delta") onDelta?.(u.text)
-      else if (u.type === "error") onError?.(u.error)
+      else if (u.type === "error") onError?.(u.error, u)
       else if (u.type === "done") onDone?.(u)
+      else if (u.type === "retry") onRetry?.(u)
     }
   }
+}
+
+// Free models fall back automatically on the backend; this just tells the user
+// so a silent pause before a mid-length answer doesn't look broken.
+function showRetryNote(bubble, label) {
+  bubble.classList.remove("typing")
+  const note = label ? t("switchingModel")(label) : t("thinking")
+  bubble.innerHTML = `<span class="retry-note">${escapeHtml(note)}</span>`
+}
+
+// Every free model failed for this message. Show the friendly explanation
+// instead of a raw error, with a one-click way to do the "new conversation"
+// trick rather than making the user find the sidebar button themselves.
+function showLimitReached(bubble) {
+  bubble.classList.remove("typing")
+  bubble.innerHTML = ""
+  const wrap = document.createElement("div")
+  wrap.className = "limit-reached"
+  const msg = document.createElement("span")
+  msg.style.color = "var(--danger)"
+  msg.textContent = `⚠️ ${t("limitReached")}`
+  const btn = document.createElement("button")
+  btn.className = "btn-primary"
+  btn.textContent = t("startNewChat")
+  btn.onclick = () => startNewChat()
+  wrap.append(msg, btn)
+  bubble.appendChild(wrap)
 }
 
 // ---------- agent mode: plan a whole task, run it step by step ----------
@@ -333,14 +395,19 @@ async function runAgent(message) {
   bubble.classList.add("typing")
   let acc = ""
 
-  await streamPost("/api/agent", { message, conversationId: currentConversationId }, {
+  await streamPost("/api/agent", { message, conversationId: currentConversationId, modelId: currentModelId }, {
     onDelta: (t) => {
       bubble.classList.remove("typing")
       acc += t
       bubble.innerHTML = renderMarkdown(acc)
       chat.scrollTop = chat.scrollHeight
     },
-    onError: (e) => {
+    onRetry: (u) => {
+      acc = ""
+      showRetryNote(bubble, u.label)
+    },
+    onError: (e, meta) => {
+      if (meta?.exhausted) return showLimitReached(bubble)
       bubble.classList.remove("typing")
       bubble.innerHTML = `<span style="color:var(--danger)">⚠️ ${escapeHtml(e)}</span>`
     },
@@ -454,14 +521,19 @@ async function sendMessage(message, { hidden = false } = {}) {
   bubble.classList.add("typing")
   let acc = ""
 
-  await streamPost("/api/chat", { message, conversationId: currentConversationId }, {
+  await streamPost("/api/chat", { message, conversationId: currentConversationId, modelId: currentModelId }, {
     onDelta: (t) => {
       bubble.classList.remove("typing")
       acc += t
       bubble.innerHTML = renderMarkdown(acc)
       chat.scrollTop = chat.scrollHeight
     },
-    onError: (e) => {
+    onRetry: (u) => {
+      acc = ""
+      showRetryNote(bubble, u.label)
+    },
+    onError: (e, meta) => {
+      if (meta?.exhausted) return showLimitReached(bubble)
       bubble.classList.remove("typing")
       bubble.innerHTML = `<span style="color:var(--danger)">⚠️ ${escapeHtml(e)}</span>`
     },
@@ -591,6 +663,7 @@ function applyStaticI18n() {
   $("modalCancel").textContent = t("cancelBtn")
   $("modalConfirm").textContent = t("confirmBtn")
   $("modalToggle").textContent = t("seeDetails")
+  $("modelLabel").textContent = t("modelLabel")
   // Replace the initial welcome panel if it's still showing.
   if (chat.querySelector(".welcome")) chat.innerHTML = welcomeHTML()
 }
@@ -608,6 +681,7 @@ async function init() {
   } else {
     $("sysinfo").textContent = ""
   }
+  loadModels()
   loadConversations()
 }
 

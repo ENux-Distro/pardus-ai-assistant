@@ -130,6 +130,66 @@ export function stop(): void {
   proc?.kill("SIGTERM")
   proc = undefined
   client = undefined
+  modelsCache = undefined
+}
+
+// ---------- free models ----------
+//
+// This app only ever uses OpenCode's built-in "opencode" provider (OpenCode
+// Zen), which works with zero configured API keys. We restrict the picker to
+// its genuinely free models (cost 0) — never a paid one the user didn't ask
+// to be billed for.
+
+export type ModelRef = { providerID: string; modelID: string; label: string }
+
+// Safety net if the live provider list can't be fetched (engine not up yet,
+// network hiccup talking to the catalogue, or the "opencode" provider is
+// briefly absent). Mirrors OpenCode Zen's free lineup at the time of writing;
+// order matters — it's also the fallback chain (see askChain below).
+const FALLBACK_CHAIN: ModelRef[] = [
+  { providerID: "opencode", modelID: "big-pickle", label: "Big Pickle" },
+  { providerID: "opencode", modelID: "hy3-free", label: "Hy3" },
+  { providerID: "opencode", modelID: "north-mini-code-free", label: "North Mini Code" },
+  { providerID: "opencode", modelID: "mimo-v2.5-free", label: "MiMo V2.5" },
+  { providerID: "opencode", modelID: "deepseek-v4-flash-free", label: "DeepSeek V4 Flash" },
+  { providerID: "opencode", modelID: "nemotron-3-ultra-free", label: "Nemotron 3 Ultra" },
+]
+
+let modelsCache: ModelRef[] | undefined
+
+// The ordered chain of free models to try. Fetched once from the running
+// engine (so it stays current if OpenCode Zen's free lineup changes) and
+// cached for the life of the process; falls back to FALLBACK_CHAIN if the
+// engine can't be asked.
+export async function listModels(): Promise<ModelRef[]> {
+  if (modelsCache) return modelsCache
+  if (!client) await start()
+  try {
+    const res = await client.config.providers()
+    const providers = res.data?.providers ?? res.providers ?? []
+    const opencode = providers.find((p: any) => p.id === "opencode")
+    const free = Object.values(opencode?.models ?? {})
+      .filter((m: any) => m.cost?.input === 0 && m.cost?.output === 0)
+      .map((m: any): ModelRef => ({ providerID: "opencode", modelID: m.id, label: m.name ?? m.id }))
+    if (free.length) {
+      // Keep FALLBACK_CHAIN's ordering for any model both lists agree on
+      // (it's tuned: general-purpose first, huge-context last-resort last),
+      // then append anything new the catalogue added.
+      const known = FALLBACK_CHAIN.map((m) => m.modelID)
+      free.sort((a, b) => {
+        const ia = known.indexOf(a.modelID)
+        const ib = known.indexOf(b.modelID)
+        if (ia === -1 && ib === -1) return 0
+        if (ia === -1) return 1
+        if (ib === -1) return -1
+        return ia - ib
+      })
+      modelsCache = free
+      return free
+    }
+  } catch {}
+  modelsCache = FALLBACK_CHAIN
+  return FALLBACK_CHAIN
 }
 
 // Reply in the user's language. Detected once from the system locale; Pardus is
@@ -182,14 +242,19 @@ export type AskResult = {
 }
 
 // Core: send one message under a given persona, return the assistant text.
-async function prompt(system: string, message: string, sessionID: string): Promise<AskResult> {
+async function prompt(system: string, message: string, sessionID: string, model?: ModelRef): Promise<AskResult> {
   if (!client) await start()
 
   const res = await client.session.prompt({
     path: { id: sessionID },
     // Disable every tool: the model must only talk. It never touches the
     // system itself — commands run only through our confirmed action buttons.
-    body: { system, tools: NO_TOOLS, parts: [{ type: "text", text: message }] },
+    body: {
+      system,
+      tools: NO_TOOLS,
+      parts: [{ type: "text", text: message }],
+      ...(model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
+    },
   })
 
   if (res.error) return { text: "", error: typeof res.error === "string" ? res.error : JSON.stringify(res.error) }
@@ -207,7 +272,13 @@ async function prompt(system: string, message: string, sessionID: string): Promi
 
 // Streaming core: start generation and forward text as it is produced, so the
 // GUI can show the answer flowing word by word instead of appearing all at once.
-async function stream(system: string, message: string, sessionID: string, onDelta: (t: string) => void): Promise<AskResult> {
+async function stream(
+  system: string,
+  message: string,
+  sessionID: string,
+  onDelta: (t: string) => void,
+  model?: ModelRef,
+): Promise<AskResult> {
   if (!client) await start()
 
   const ac = new AbortController()
@@ -225,7 +296,12 @@ async function stream(system: string, message: string, sessionID: string, onDelt
   client.session
     .promptAsync({
       path: { id: sessionID },
-      body: { system, tools: NO_TOOLS, parts: [{ type: "text", text: message }] },
+      body: {
+        system,
+        tools: NO_TOOLS,
+        parts: [{ type: "text", text: message }],
+        ...(model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
+      },
     })
     .then((res: any) => {
       if (res?.error) error = typeof res.error === "string" ? res.error : JSON.stringify(res.error)
@@ -296,19 +372,43 @@ export function ask(message: string, sessionID: string): Promise<AskResult> {
   return prompt(PERSONA, message, sessionID)
 }
 
-// Plain chat mode, streamed.
-export function askStream(message: string, sessionID: string, onDelta: (t: string) => void): Promise<AskResult> {
-  return stream(PERSONA, message, sessionID, onDelta)
-}
-
-// Agent mode, streamed: the reply contains an ordered, numbered plan.
-export function askAgentStream(message: string, sessionID: string, onDelta: (t: string) => void): Promise<AskResult> {
-  return stream(AGENT_PERSONA, message, sessionID, onDelta)
-}
-
 // Agent mode (blocking — used as a fallback).
 export function askAgent(message: string, sessionID: string): Promise<AskResult> {
   return prompt(AGENT_PERSONA, message, sessionID)
+}
+
+// ---------- streamed chat/agent with automatic model fallback ----------
+//
+// Try the user's chosen model first (or the chain's default if none chosen).
+// If it errors — hit its context limit, got rate-limited, quota exhausted,
+// whatever — move to the next free model in the chain and retry the SAME
+// message from scratch. Only once every model in the chain has failed do we
+// give up, so the caller can show the "please start a new conversation" copy.
+export type AskChainResult = AskResult & { model?: ModelRef; exhausted?: boolean }
+
+export async function askChain(
+  kind: "chat" | "agent",
+  message: string,
+  sessionID: string,
+  preferredModelID: string | undefined,
+  onDelta: (t: string) => void,
+  onRetry?: (model: ModelRef) => void,
+): Promise<AskChainResult> {
+  const chain = await listModels()
+  const ordered = preferredModelID
+    ? [...chain.filter((m) => m.modelID === preferredModelID), ...chain.filter((m) => m.modelID !== preferredModelID)]
+    : chain
+  const system = kind === "agent" ? AGENT_PERSONA : PERSONA
+
+  let lastError: string | undefined
+  for (let i = 0; i < ordered.length; i++) {
+    const model = ordered[i]
+    if (i > 0) onRetry?.(model)
+    const res = await stream(system, message, sessionID, onDelta, model)
+    if (!res.error) return { ...res, model }
+    lastError = res.error
+  }
+  return { text: "", error: lastError ?? "All free models are unavailable right now.", exhausted: true }
 }
 
 export function isRunning(): boolean {

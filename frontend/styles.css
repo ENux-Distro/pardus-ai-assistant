@@ -65,8 +65,18 @@ button { font-family: inherit; cursor: pointer; }
 .conv-empty { font-size: 12px; color: var(--muted); padding: 6px 10px; }
 
 .side-foot { margin-top: auto; }
+.model-picker { padding: 10px 6px 4px; border-top: 1px solid var(--border); }
+.model-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 6px; }
+.model-select {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel-2); color: var(--white); font-size: 13px; font-family: inherit;
+}
+.model-select:hover, .model-select:focus { border-color: var(--yellow); outline: none; }
 .sysinfo { font-size: 12px; color: var(--muted); line-height: 1.6; padding: 10px 6px; border-top: 1px solid var(--border); }
 .sysinfo b { color: var(--white); font-weight: 600; }
+.retry-note { font-size: 12px; color: var(--muted); font-style: italic; padding: 4px 0; }
+.limit-reached { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.limit-reached .btn-primary { padding: 8px 14px; font-size: 13px; }
 
 /* ---------- Main / chat ---------- */
 .main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }

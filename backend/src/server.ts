@@ -9,7 +9,7 @@
 // shutdown, so the user never sees it.
 
 import { HTTP_HOST, HTTP_PORT } from "./config.ts"
-import { askStream, askAgentStream, createSession, ensureSession, isRunning, start, stop } from "./opencode.ts"
+import { askChain, createSession, ensureSession, isRunning, listModels, start, stop } from "./opencode.ts"
 import * as Conversations from "./conversations.ts"
 import { collect } from "./system.ts"
 import { classify } from "./safety.ts"
@@ -96,6 +96,9 @@ const server = Bun.serve({
 
     if (path === "/api/system") return json(collect())
 
+    // The free models the picker can choose between.
+    if (path === "/api/models") return json(await listModels())
+
     // ----- conversation storage -----
     if (path === "/api/conversations" && req.method === "GET") return json(Conversations.list())
 
@@ -134,6 +137,7 @@ const server = Bun.serve({
       if (!message) return json({ error: "message is required" }, 400)
       const agent = path === "/api/agent"
       const mode = agent ? "agent" : "chat"
+      const modelId = (body as any).modelId ? String((body as any).modelId) : undefined
 
       // Resolve (or start) the conversation this message belongs to.
       let conv = (body as any).conversationId ? Conversations.get(String((body as any).conversationId)) : undefined
@@ -149,15 +153,18 @@ const server = Bun.serve({
         async start(controller) {
           const send = (obj: unknown) => controller.enqueue(`data: ${JSON.stringify(obj)}\n\n`)
           const onDelta = (t: string) => send({ type: "delta", text: t })
-          const res = agent
-            ? await askAgentStream(String(message), sessionID, onDelta)
-            : await askStream(String(message), sessionID, onDelta)
+          // If a model hits its limit (or any other error), retry the same
+          // message on the next free model; tell the client so it can reset
+          // the bubble it was streaming into before the retry's deltas arrive.
+          const onRetry = (model: { modelID: string; label: string }) =>
+            send({ type: "retry", model: model.modelID, label: model.label })
+          const res = await askChain(agent ? "agent" : "chat", String(message), sessionID, modelId, onDelta, onRetry)
           if (res.error) {
-            send({ type: "error", error: res.error, conversationId: convID })
+            send({ type: "error", error: res.error, exhausted: res.exhausted, conversationId: convID })
           } else {
             const saved = Conversations.append(convID, { role: "assistant", text: res.text, mode })
             const extra = agent ? parseSteps(res.text) : { action: combineCommand(res.text) }
-            send({ type: "done", text: res.text, conversationId: convID, title: saved?.title, ...extra })
+            send({ type: "done", text: res.text, conversationId: convID, title: saved?.title, model: res.model?.modelID, ...extra })
           }
           controller.close()
         },

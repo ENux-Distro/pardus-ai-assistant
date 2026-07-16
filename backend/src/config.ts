@@ -64,3 +64,13 @@ export const DATA_DIR =
 // on every single message. Beginner chat never needs real project context, so
 // give the engine its own tiny, empty directory instead.
 export const ENGINE_DIR = env.PARDUS_ENGINE_DIR ?? `${DATA_DIR}/engine-workdir`
+
+// The engine's own persistent storage (sessions/messages sqlite db, cache,
+// config, auth). By default OpenCode derives all of this from the real
+// $HOME (via XDG_DATA_HOME etc, see opencode/packages/core/src/global.ts),
+// which means a bundled engine silently shares a database with any other
+// OpenCode install the user has on the machine — different versions/schemas
+// can then collide (a stale-migration SQLite error masquerading as "the app
+// is broken"). Give the engine its own storage tree instead, so it never
+// touches the user's real ~/.config/opencode or ~/.local/share/opencode.
+export const ENGINE_STORAGE_DIR = env.PARDUS_ENGINE_STORAGE_DIR ?? `${DATA_DIR}/engine-storage`

@@ -15,6 +15,7 @@ import {
   OPENCODE_PORT,
   SDK_ENTRY,
   ENGINE_DIR,
+  ENGINE_STORAGE_DIR,
 } from "./config.ts"
 import { detectLang } from "./locale.ts"
 
@@ -81,6 +82,18 @@ export async function start(): Promise<void> {
   // turns that into a multi-minute crawl per message.
   mkdirSync(ENGINE_DIR, { recursive: true })
 
+  // Give the engine its own storage tree via XDG overrides, instead of
+  // inheriting the real $HOME's ~/.config/opencode and ~/.local/share/opencode.
+  // Without this, our bundled engine silently shares a sessions/messages
+  // SQLite database with any other OpenCode install on the machine — a
+  // schema mismatch between the two then surfaces as a random-looking
+  // "SQLiteError: no such column" on every chat.
+  const xdgData = `${ENGINE_STORAGE_DIR}/data`
+  const xdgCache = `${ENGINE_STORAGE_DIR}/cache`
+  const xdgConfig = `${ENGINE_STORAGE_DIR}/config`
+  const xdgState = `${ENGINE_STORAGE_DIR}/state`
+  for (const dir of [xdgData, xdgCache, xdgConfig, xdgState]) mkdirSync(dir, { recursive: true })
+
   const port = await freePort()
   proc = spawn(
     OPENCODE_CMD,
@@ -92,7 +105,13 @@ export async function start(): Promise<void> {
       // configured, provider errors) are invisible and look like the app just
       // hanging forever. The user never sees this — it only hits the log file.
       stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
+      env: {
+        ...process.env,
+        XDG_DATA_HOME: xdgData,
+        XDG_CACHE_HOME: xdgCache,
+        XDG_CONFIG_HOME: xdgConfig,
+        XDG_STATE_HOME: xdgState,
+      },
     },
   )
   const logEngine = (chunk: Buffer) => process.stderr.write(`[engine] ${chunk}`)

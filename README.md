@@ -69,7 +69,8 @@ One-line install (clones the repo, installs prerequisites, runs `make install`):
 curl -fsSL https://raw.githubusercontent.com/ENux-Distro/pardus-ai-assistant/main/install | bash
 ```
 
-Or manually, requires Bun 1.3+, from this directory:
+
+Also manually, requires Bun 1.3+, from this directory:
 
 ```bash
 make install     # clone+compile the engine + a `pardus-assistant` command + menu entry
@@ -82,6 +83,15 @@ first-time step, a few minutes — then symlinks a `pardus-assistant` launcher
 into `~/.local/bin`, and adds a "Pardus Assistant" entry to your application
 menu. Re-running `make install` (or `make engine`) updates and recompiles the
 engine, so it stays patchable and current rather than frozen at clone time.
+
+**WARNING: Compiling manually with low specification hardware may not work, because of the limitations of the hardware. Consider installing via the .deb package if you have a low-end computer**
+
+Or via the .deb package:
+
+```bash
+wget https://github.com/ENux-Distro/pardus-ai-assistant/releases/download/Pardus-AI-Assistant/pardus-assistant_amd64.deb      # Downloads the .deb package
+sudo apt install ./pardus-assistant_amd64.deb      # Installs the .deb package via apt using sudo
+```
 
 Other targets:
 
@@ -128,40 +138,6 @@ reconstructed from the saved transcript when a chat is reopened.
 | `OPENCODE_CMD`  | `bun`                | how to launch the engine                 |
 | `PARDUS_WORKDIR`| `$HOME`              | folder the assistant operates in         |
 
-## Building a .deb
-
-```bash
-make engine   # compile the OpenCode engine first, if you haven't already
-make deb      # -> dist-deb/pardus-assistant_<version>_<arch>.deb
-```
-
-The .deb is fully self-contained: it bundles its own private `bun` runtime
-and the compiled engine binary, so installing it (`sudo dpkg -i
-dist-deb/pardus-assistant_*.deb`) needs no network access, no `bun`, and no
-`git` on the target machine — just `sudo apt install -f` afterwards if
-`python3-gi` / `gir1.2-webkit2-4.1` (native window support, recommended but
-optional) aren't already present. Installs to `/opt/pardus-assistant`, with
-`/usr/bin/pardus-assistant` and a menu entry; `sudo dpkg -r pardus-assistant`
-removes the app but leaves each user's saved conversations in place.
-
-## Desktop shell (Tauri) — next step
-
-The toolchain isn't installed on this machine yet. To add the desktop wrapper:
-
-```bash
-# 1. Rust + Tauri prerequisites (Debian/Pardus)
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl libssl-dev \
-  libayatana-appindicator3-dev librsvg2-dev
-curl https://sh.rustup.rs -sSf | sh
-cargo install tauri-cli
-
-# 2. scaffold, pointing Tauri at the existing frontend
-cargo tauri init   # frontendDist = ../frontend, devUrl = http://127.0.0.1:5174
-```
-
-In `src-tauri`, bundle the Bun backend as a **sidecar** and spawn it on startup
-so the user launches a single app. Because the frontend already talks to the
-backend over `127.0.0.1`, no frontend changes are needed.
 
 ## Safety model
 

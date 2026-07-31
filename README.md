@@ -1,7 +1,9 @@
 # Pardus AI Assistant
 
+# **Status:** Stable
+
 An AI assistant for **absolute Linux beginners** — people who just
-switched from Windows and know nothing technical. It uses [OpenCode](./opencode)
+switched from Windows and know nothing technical. It uses [OpenCode](https://opencode.ai/)
 as its AI brain (completely hidden from the user) to turn plain-language
 questions into simple explanations and one-click, confirmation-gated actions.
 

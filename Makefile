@@ -74,6 +74,20 @@ engine: no-sudo install-bun
 	BUN="$$(command -v bun)"; \
 	if [ -z "$$BUN" ] || [ ! -x "$$BUN" ]; then echo "Error: bun not found after install."; exit 1; fi; \
 	if [ -z "$$(command -v git)" ]; then echo "Error: git is required."; exit 1; fi; \
+	if ! command -v g++ >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1; then \
+		echo "Installing native build tools…"; \
+		if command -v apt-get >/dev/null 2>&1; then \
+			sudo apt-get update -qq && sudo apt-get install -y -qq build-essential nodejs; \
+		else \
+			echo "Error: a C/C++ compiler (g++) and Node.js are required to build native engine dependencies (e.g. tree-sitter grammars). Install build-essential and nodejs (or equivalents) and re-run."; \
+			exit 1; \
+		fi; \
+	fi; \
+	NODE_GYP_VERSION="$$(node-gyp --version 2>/dev/null || true)"; \
+	if ! printf '%s' "$$NODE_GYP_VERSION" | grep -q '^v10\.'; then \
+		echo "Installing node-gyp…"; \
+		"$$BUN" install -g node-gyp@10.3.1; \
+	fi; \
 	if [ -d "$(OPENCODE_DIR)/.git" ]; then \
 		echo "Updating the OpenCode engine fork…"; \
 		git -C "$(OPENCODE_DIR)" fetch --depth 1 origin "$(ENGINE_BRANCH)"; \
@@ -93,7 +107,7 @@ engine: no-sudo install-bun
 install: engine
 	@echo "Installing to $(SHAREDIR)…"
 	@mkdir -p "$(SHAREDIR)" "$(BINDIR)" "$(APPSDIR)"
-	@cp -a "$(APP_DIR)/." "$(SHAREDIR)/"
+	@cp -af "$(APP_DIR)/." "$(SHAREDIR)/"
 	@chmod +x "$(SHAREDIR)/bin/pardus-assistant"
 	@ln -sf "$(SHAREDIR)/bin/pardus-assistant" "$(BINDIR)/pardus-assistant"
 	@printf '%s\n' \

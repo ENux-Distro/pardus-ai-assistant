@@ -11,7 +11,7 @@
 set -euo pipefail
 
 REPO="${PARDUS_REPO:-https://github.com/ENux-Distro/pardus-ai-assistant.git}"
-BRANCH="${PARDUS_BRANCH:-dev}"
+BRANCH="${PARDUS_BRANCH:-main}"
 SRC="${PARDUS_SRC:-$HOME/.local/share/pardus-ai-assistant}"
 LOG="$(mktemp /tmp/pardus-install.XXXXXX.log)"
 
@@ -80,6 +80,20 @@ if have apt-get; then
     say "Installing app-window dependencies…"
     run sudo apt-get update -qq
     run sudo apt-get install -y -qq python3-gi gir1.2-webkit2-4.1 || true
+  fi
+fi
+
+# Native build toolchain — some engine dependencies (tree-sitter grammars)
+# ship no prebuilt binary and must be compiled with node-gyp, which needs a
+# C/C++ compiler and a real Node.js binary (bun alone can't run node-gyp's
+# `#!/usr/bin/env node` script).
+if ! have g++ || ! have node; then
+  if have apt-get; then
+    say "Installing native build tools…"
+    run sudo apt-get update -qq
+    run sudo apt-get install -y -qq build-essential nodejs
+  else
+    fail "A C/C++ compiler (g++) and Node.js are required to build native engine dependencies. Install build-essential and nodejs (or equivalents) and re-run."
   fi
 fi
 
